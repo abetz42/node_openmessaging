@@ -11,6 +11,7 @@ const platformclient =  require ('purecloud-platform-client-v2');
 const apiclient = platformclient.ApiClient.instance;
 const cryptomodule = require ('crypto')
 const localtunnel = require ('localtunnel');
+const ngrok = require("@ngrok/ngrok");
 const readline = require('readline');
 const { program } = require('commander');
 const { json } = require('stream/consumers');
@@ -28,8 +29,10 @@ var conversationid;
 var messagingid;
 var debug = false;
 var tunnel = null;
+var ngroktunnel;
 var simulatefailures =  false;
 var localtunnelused = false;
+var ngroktunnelused = false;
 var currenturl = "https://cute-lions-act.loca.lt/openmessagingwebhook";
 var publicurldomain = "httsp://example.com";
 var rejectcode = 403;
@@ -321,6 +324,10 @@ function Update_Integration_Webhook_URL()
             currenturl = tunnel.url + "/openmessagingwebhook";
         }
     }
+    else if (ngroktunnelused){
+        publicurldomain = ngroktunnel;
+        currenturl = ngroktunnel + "/openmessagingwebhook";
+    }
     else
     {
         currenturl = "https://" + process.env.CODESPACE_NAME + "-3000." + process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN + "/openmessagingwebhook";
@@ -343,7 +350,13 @@ function CloseServer()
 {
     server.closeAllConnections();
     server.close();
-    if(localtunnel) tunnel.close();
+    if(localtunnelused) { tunnel.close()};
+    if(ngroktunnelused){
+        async () => {
+            await ngrok.disconnect();
+        }
+    }
+
     Logger("END","Web Server closed!");
     process.exit();
 }
@@ -417,19 +430,31 @@ function main()
                 
                 if (!process.env.CODESPACES)
                 {
-                    (async () => {
-                        tunnel = await localtunnel({port:3000});
-            
-                        Logger("START","Local tunnel open: " +  tunnel.url);
-                        localtunnelused = true;
-                        if(conversationapi)
-                            Update_Integration_Webhook_URL();
-                        
-                        tunnel.on('close',() => {
-                        });
-            
-            
-                    })();
+                    if(process.env.YOUR_NGROK_AUTH_TOKEN){
+                        (async () => {
+                            await ngrok.authtoken(process.env.YOUR_NGROK_AUTH_TOKEN);
+                            ngroktunnel = (await ngrok.forward(3000)).url();
+                            Logger("START","Ngrok tunnel open: " + ngroktunnel);
+                            ngroktunnelused = true;
+                            if(conversationapi)
+                                Update_Integration_Webhook_URL();
+                        })();
+                    }
+                    else{
+                        (async () => {
+                            tunnel = await localtunnel({port:3000});
+                
+                            Logger("START","Local tunnel open: " +  tunnel.url);
+                            localtunnelused = true;
+                            if(conversationapi)
+                                Update_Integration_Webhook_URL();
+                            
+                            tunnel.on('close',() => {
+                            });
+                
+                
+                        })();
+                    }
                 }
                 else {
                     if(conversationapi)
